@@ -1,4 +1,7 @@
 import functools
+import os
+import pickle
+import random
 
 import gymnasium as gym
 from gymnasium.spaces import OneOf, Discrete, Dict, MultiDiscrete, Box
@@ -17,9 +20,14 @@ class Game(AECEnv):
     
     def __init__(self):
         self.possible_agents = [f"player_{i}" for i in range(4)]
+        self.generator = None
          
         
-    def reset(self, num_players=2):
+    def reset(self, seed=None, num_players=2):
+        if self.generator is None or seed is not None:
+            self.seed = seed
+            self.generator = np.random.default_rng(seed=seed) 
+            
         self.num_players = num_players
         
         self.agents = self.possible_agents[:num_players]
@@ -34,14 +42,20 @@ class Game(AECEnv):
         self.agent_selection = self._agent_selector.next()  
 
         self.players = {agent: Player() for agent in self.agents}
-        
-        self.nobles = []
-        self.developments = []
+      
+        d_pickle = os.path.abspath(__file__) / "../files/developments.pickle"
+        with open(d_pickle, 'rb') as file:
+            self.development_stack = self.generator.shuffle(pickle.load(file))
+        self.developments = [self.development_stack.pop() for _ in range(12)]
+            
+        n_pickle = os.path.abspath(__file__) / "../files/nobles.pickle"
+        with open(n_pickle, 'rb') as file:
+            self.noble_stack = self.generator.shuffle(pickle.load(file))
+        self.nobles = [self.noble_stack.pop() for _ in range(3)]
         
         self.tokens = {token: 4 for token in Token}
         self.tokens[Token.GOLD] = 5
         
-        return self._get_obs(), self._get_info()
         
     @functools.lru_cache(maxsize=None)
     def action_space(self, agent):
@@ -93,5 +107,16 @@ class Game(AECEnv):
         return obs
     
     def step(self, action):
-        pass
+        if (
+            self.terminations[self.agent_selection]
+            or self.truncations[self.agent_selection]
+        ):
+            # handles stepping an agent which is already dead
+            # accepts a None action for the one agent, and moves the agent_selection to
+            # the next dead agent,  or if there are no more dead agents, to the next live agent
+            self._was_dead_step(action)
+            return
+        
+        agent = self.agent_selection
+        # handle game logic depending on the action. assume all actions are valid (invalid would be masked)
         

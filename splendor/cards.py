@@ -14,7 +14,8 @@ class Development:
                         dtype=np.int_)
         
 class Noble:
-    def __init__(self, prestige: int, cost: dict[Token, int]):
+    def __init__(self, name: str, prestige: int, cost: dict[Token, int]):
+        self.name = name
         self.prestige = prestige
         self.cost = cost
         
