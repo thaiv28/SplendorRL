@@ -11,6 +11,7 @@ import numpy as np
 
 from splendor.player import Player
 from splendor.cards import Development, Noble, Token
+from splendor.tokens import COMBINATIONS
 
 class Game(AECEnv):
    
@@ -45,7 +46,16 @@ class Game(AECEnv):
       
         d_pickle = os.path.abspath(__file__) / "../files/developments.pickle"
         with open(d_pickle, 'rb') as file:
-            self.development_stack = self.generator.shuffle(pickle.load(file))
+            all_developments: list[Development] = self.generator.shuffle(pickle.load(file))
+            
+        self.development_stack = {
+            i: [c for c in all_developments if c.level == i]
+            for i in range(1, 4)
+        }
+        self.developments = {
+            i: [stack.pop() for _ in range(4)] 
+            for i, stack in self.development_stack.items()
+        }
         self.developments = [self.development_stack.pop() for _ in range(12)]
             
         n_pickle = os.path.abspath(__file__) / "../files/nobles.pickle"
@@ -84,14 +94,12 @@ class Game(AECEnv):
                             "reserved_cards": Box(low=0, high=10, shape=(3, 12)),
                     },
                 "opponents":
-                    {
-                        [{
-                            "prestige": Box(low=0, high=40, dtype=np.int_),
-                            "tokens": MultiDiscrete([5] * 6),
-                            "developments": MultiDiscrete([5] * 5),
-                            "reserved_cards": Box(low=0, high=10, shape=(3, 12)),
-                        } * (self.num_players - 1)]
-                    }
+                    [{
+                        "prestige": Box(low=0, high=40, dtype=np.int_),
+                        "tokens": MultiDiscrete([5] * 6),
+                        "developments": MultiDiscrete([5] * 5),
+                        "reserved_cards": Box(low=0, high=10, shape=(3, 12)),
+                    } * (self.num_players - 1)]
             }
         )
         
@@ -100,7 +108,7 @@ class Game(AECEnv):
         obs = {}
         obs["available_tokens"] = np.array([q for _, q in self.tokens.items()], dtype=np.int_)
         obs["available_nobles"] = np.array([noble.obs_repr() for noble in self.nobles])
-        obs["available_cards"] = np.array([development.obs_repr() for development in self.developments])
+        obs["available_cards"] = np.array([development.obs_repr() for stack in self.developments for development in stack])
         obs["player"] = self.players[agent].obs_repr()
         obs["opponents"] = [self.players[a].obs_repr() for a in self.agents if a != agent]
         
@@ -119,4 +127,81 @@ class Game(AECEnv):
         
         agent = self.agent_selection
         # handle game logic depending on the action. assume all actions are valid (invalid would be masked)
+        main_action = action[0]
+        subaction = action[1]
+        match main_action:
+            case 0:
+                self.take_three_tokens(agent, subaction)
+            case 1:
+                self.take_two_tokens(agent, subaction)
+            case 2:
+                self.reserve_card(agent, subaction)
+            case 3:
+                self.purchase_development(agent, subaction)
+            case 4:
+                self.reserve_card(agent, subaction)
+            case _:
+                raise ValueError("Main action %s not supported", main_action)
+        
+    def take_three_tokens(self, agent, action):
+        tokens = COMBINATIONS[action]
+        for token in tokens:
+            self.tokens[token] -= 1
+            self.players[agent].tokens[token] += 1
+    
+    def take_two_tokens(self, agent, action):
+        self.tokens[action] -= 2
+        self.players[agent].tokens[action] += 2
+        
+    def reserve_card(self, agent, action):
+        if action < 12:
+            if action < 4:
+                level = 1
+            elif action < 8:
+                level = 2
+            else:
+                level = 3
+                
+            index = action % 4
+            card = self.developments[level][index]
+            self.developments[level][index] = self.development_stack[level].pop()
+        else:
+            level = action - 11
+            card = self.development_stack[level].pop()
+        
+        self.players[agent].reserved_cards.append(card)
+      
+    def purchase_development(self, agent, action):
+        if action < 4:
+            level = 1
+        if action < 8:
+            level = 2
+        else:
+            level = 3
+        index = action % 4
+        
+        card = self.developments[level][index]
+        self.purchase_development_helper(self, agent, card)
+        self.developments[level][index] = self.development_stack[level].pop()
+     
+    def purchase_reserved(self, agent, action):
+        card = self.players[agent].reserved_cards.pop(action)
+        self.purchase_development_helper(agent, card)
+    
+    def purchase_development_helper(self, agent, development: Development):
+        p = self.players[agent]
+        for token, cost in development.cost:
+            tokens_spent = cost - p.developments[token]
+            p.tokens[token] -= tokens_spent
+            self.tokens[token] += tokens_spent
+            
+        p.prestige += development.prestige
+        p.developments[development.bonus] += 1
+            
+         
+        
+        
+    
+        
+
         

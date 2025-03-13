@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 import numpy as np
 
 from splendor.cards import Development
@@ -6,7 +8,7 @@ from splendor.tokens import Token, encode_tokens
 class Player:
     def __init__(self):
         self.tokens: dict[Token, int] = {}
-        self.developments: dict[Token, int] = []
+        self.developments: dict[Token, int] = defaultdict(lambda: 0)
         self.prestige = 0
         self.reserved_cards: list[Development] = []
         
