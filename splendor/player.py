@@ -7,8 +7,12 @@ from splendor.tokens import Token, encode_tokens
 
 class Player:
     def __init__(self):
-        self.tokens: dict[Token, int] = {}
-        self.developments: dict[Token, int] = defaultdict(lambda: 0)
+        self.tokens: dict[Token, int] = {
+            t: 0 for t in Token
+        }
+        self.developments: dict[Token, int] = {
+            name: 0 for name in Token if name != Token.GOLD
+        }
         self.prestige = 0
         self.reserved_cards: list[Development] = []
         
@@ -19,3 +23,11 @@ class Player:
             "developments": np.array(encode_tokens(self.developments)),
             "reserved_cards": np.array([d.obs_repr() for d in self.reserved_cards])
         }
+        
+    def __str__(self):
+        s = f"TOKENS ({list(self.tokens.values())}), \
+            DEVELOPMENTS ({list(self.developments.values())}), \
+            PRESTIGE ({self.prestige})"
+            
+        s += f"\nRESERVED: " + " | ".join(str(d) for d in self.reserved_cards)
+        return s

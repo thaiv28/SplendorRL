@@ -1,126 +1,130 @@
-import functools
 import os
 import pickle
-import random
-
-import gymnasium as gym
-from gymnasium.spaces import OneOf, Discrete, Dict, MultiDiscrete, Box
-from pettingzoo import AECEnv
-from pettingzoo.utils import agent_selector
 import numpy as np
-
 from splendor.player import Player
 from splendor.cards import Development, Noble, Token
 from splendor.tokens import COMBINATIONS
-from splendor.splendor import Splendor
 
-class Game(AECEnv):
-   
-    metadata = {
-        "name": "splendor_v0"
-    } 
-    
+class Splendor:
     def __init__(self):
-        self.possible_agents = [f"player_{i}" for i in range(4)]
         self.generator = None
-        self.game = Splendor()
-         
-        
+        self.ongoing = False
+
     def reset(self, seed=None, num_players=2):
-        self.num_players = num_players
-        
-        self.agents = self.possible_agents[:num_players]
-        self.rewards = {agent: 0 for agent in self.agents}
-        self._cumulative_rewards = {agent: 0 for agent in self.agents}
-        self.terminations = {agent: False for agent in self.agents}
-        self.truncations = {agent: False for agent in self.agents}
-        self.infos = {agent: {} for agent in self.agents}
-        self.observations = {agent: None for agent in self.agents}
+        self.ongoing = True
+        if self.generator is None or seed is not None:
+            self.seed = seed
+            self.generator = np.random.default_rng(seed=seed) 
        
-        self._agent_selector = agent_selector(self.agents)
-        self.agent_selection = self._agent_selector.next()  
+        self.players = {f"player_{i}": Player() for i in range(num_players)}
+        
+        d_pickle = os.path.dirname(__file__) + "/../files/developments.pickle"
+        with open(d_pickle, 'rb') as file:
+            all_developments = pickle.load(file)
+            self.generator.shuffle(all_developments)
+           
+        self.development_stack = {
+            i: [c for c in all_developments if c.level == i]
+            for i in range(1, 4)
+        }
+        self.developments = {
+            i: [stack.pop(0) for _ in range(4)] 
+            for i, stack in self.development_stack.items()
+        }
+            
+        n_pickle = os.path.dirname(__file__) + "/../files/nobles.pickle"
+        with open(n_pickle, 'rb') as file:
+            noble_stack = pickle.load(file)
+            self.generator.shuffle(noble_stack)
+        self.nobles = [noble_stack.pop(0) for _ in range(3)]
+        
+        self.tokens = {token: 4 for token in Token}
+        self.tokens[Token.GOLD] = 5
 
-        self.game.reset()
-        
-    @functools.lru_cache(maxsize=None)
-    def action_space(self, agent):
-        return OneOf(
-            (
-                Discrete(10),       # Choose 3 tokens
-                Discrete(5),        # Choose 2 tokens
-                Discrete(15),       # Reserve cards
-                Discrete(12),       # Purchase card on board
-                Discrete(3)         # Purchase reserved card
-            )
-        )
-         
-    @functools.lru_cache(maxsize=None) 
-    def observation_space(self, agent): 
-        return Dict(
-            {
-                "available_tokens": MultiDiscrete([6] * 6),
-                "available_nobles": Box(low=0, high=10, shape=(3, 6), dtype=np.int_),
-                "available_cards": Box(low=0, high=10, shape=(12, 12), dtype=np.int_),
-                "player":
-                    {
-                            "prestige": Box(low=0, high=40, dtype=np.int_),
-                            "tokens": MultiDiscrete([5] * 6),
-                            "developments": MultiDiscrete([5] * 5),
-                            "reserved_cards": Box(low=0, high=10, shape=(3, 12)),
-                    },
-                "opponents":
-                    [{
-                        "prestige": Box(low=0, high=40, dtype=np.int_),
-                        "tokens": MultiDiscrete([5] * 6),
-                        "developments": MultiDiscrete([5] * 5),
-                        "reserved_cards": Box(low=0, high=10, shape=(3, 12)),
-                    } * (self.num_players - 1)]
-            }
-        )
-        
-        
-    def observe(self, agent):
-        obs = {}
-        obs["available_tokens"] = np.array([q for _, q in self.game.tokens.items()], dtype=np.int_)
-        obs["available_nobles"] = np.array([noble.obs_repr() for noble in self.game.nobles])
-        obs["available_cards"] = np.array([development.obs_repr() for stack in self.game.developments for development in stack])
-        obs["player"] = self.game.players[agent].obs_repr()
-        obs["opponents"] = [self.game.players[a].obs_repr() for a in self.agents if a != agent]
-        
-        return obs
+    def take_three_tokens(self, agent, action: int):
+        tokens = COMBINATIONS[action]
+        for token in tokens:
+            self.tokens[token] -= 1
+            self.players[agent].tokens[token] += 1
     
-    def step(self, action):
-        if (
-            self.terminations[self.agent_selection]
-            or self.truncations[self.agent_selection]
-        ):
-            # handles stepping an agent which is already dead
-            # accepts a None action for the one agent, and moves the agent_selection to
-            # the next dead agent,  or if there are no more dead agents, to the next live agent
-            self._was_dead_step(action)
-            return
+    def take_two_tokens(self, agent, action: int):
+        self.tokens[Token(action)] -= 2
+        self.players[agent].tokens[Token(action)] += 2
         
-        agent = self.agent_selection
-        # handle game logic depending on the action. assume all actions are valid (invalid would be masked)
-        main_action = action[0]
-        subaction = action[1]
-        match main_action:
-            case 0:
-                self.game.take_three_tokens(agent, subaction)
-            case 1:
-                self.game.take_two_tokens(agent, subaction)
-            case 2:
-                self.game.reserve_card(agent, subaction)
-            case 3:
-                self.game.purchase_development(agent, subaction)
-            case 4:
-                self.game.reserve_card(agent, subaction)
-            case _:
-                raise ValueError("Main action %s not supported", main_action)
-
-
-
-
-
-
-
+    def reserve_card(self, agent, action: int):
+        if action < 12:
+            if action < 4:
+                level = 1
+            elif action < 8:
+                level = 2
+            else:
+                level = 3
+                
+            index = action % 4
+            card = self.developments[level][index]
+            self.developments[level][index] = self.development_stack[level].pop()
+        else:
+            level = action - 11
+            card = self.development_stack[level].pop()
+        
+        self.players[agent].reserved_cards.append(card)
+        
+        if self.tokens[Token.GOLD] > 0:
+            self.tokens[Token.GOLD] -= 1
+            self.players[agent].tokens[Token.GOLD] += 1
+      
+    def purchase_development(self, agent, action):
+        if action < 4:
+            level = 1
+        elif action < 8:
+            level = 2
+        else:
+            level = 3
+        index = action % 4
+        
+        card = self.developments[level][index % 4]
+        self._purchase_development_helper(agent, card)
+        self.developments[level][index] = self.development_stack[level].pop()
+        
+        self.ongoing = self.is_ongoing()
+     
+    def purchase_reserved(self, agent, action):
+        card = self.players[agent].reserved_cards.pop(action)
+        self._purchase_development_helper(agent, card)
+        
+        self.ongoing = self.is_ongoing()
+    
+    def _purchase_development_helper(self, agent, development: Development):
+        for token, cost in development.cost.items():
+            tokens_spent = cost - self.players[agent].developments[token]
+            self.players[agent].tokens[token] -= tokens_spent
+            self.tokens[token] += tokens_spent
+            
+        self.players[agent].prestige += development.prestige
+        self.players[agent].developments[development.bonus] += 1
+   
+    def game_state(self) -> str:
+        s = "\nNOBLES:\n" + "\n".join(str(noble) for noble in self.nobles)
+        s += "\n--------------"
+        s += "\nLEVEL 3: " + " | ".join(str(c) + f" ({8 + i})" for i, c in enumerate(self.developments[3]))
+        s += "\nLEVEL 2: " + " | ".join(str(c) + f" ({4 + i})" for i, c in enumerate(self.developments[2]))
+        s += "\nLEVEL 1: " + " | ".join(str(c) + f" ({i})" for i, c in enumerate(self.developments[1]))
+        s += "\n--------------"
+        s += "\nAVAILABLE TOKENS: " + str({t.name: v for t, v in self.tokens.items()})
+        s += "\n--------------"
+        s += "\n" + "\n".join([f"Player {i}: {str(p)}" for i, p in enumerate(self.players.values())])
+        return s
+    
+    def is_ongoing(self) -> bool:
+        for player in self.players.values():
+            if player.prestige >= 15:
+                return False
+            
+        return True
+    
+    def get_winner(self):
+        for name, player in self.players.items():
+            if player.prestige >= 15:
+                return name
+            
+        return None
