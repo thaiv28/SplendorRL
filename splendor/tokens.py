@@ -23,4 +23,4 @@ COMBINATIONS = [
 
     
 def encode_tokens(tokens: dict[Token, int]):
-    return [tokens[token] for token in Token]
+    return [tokens[token] for token in Token if token in tokens.keys()]

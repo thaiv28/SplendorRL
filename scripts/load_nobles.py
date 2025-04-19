@@ -13,7 +13,7 @@ df = pd.read_csv(file_path)
 nobles = []
 
 for row in df.to_dict(orient="records"):
-    name = row["Name"]
+    name = row["Name"].replace("\n", "")
     prestige = 3
     cost = {
         Token[name.upper()]: value for name, value in row.items()
@@ -22,7 +22,9 @@ for row in df.to_dict(orient="records"):
     
     for k,v in cost.items():
         if np.isnan(v):
-            cost[k] = 0 
+            cost[k] = 0
+        else:
+            cost[k] = int(cost[k])
    
     nobles.append(Noble(name=name, prestige=prestige, cost=cost)) 
     

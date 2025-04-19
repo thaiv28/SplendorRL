@@ -16,6 +16,16 @@ class Player:
         self.prestige = 0
         self.reserved_cards: list[Development] = []
         
+    def total_tokens(self):
+        return sum(self.tokens.values())
+    
+    def is_purchasable(self, development: Development):
+        for t, cost in development.cost.items():
+            if cost > self.tokens[t]:
+                return False
+            
+        return True
+        
     def obs_repr(self):
         return {
             "prestige": np.int_(self.prestige),

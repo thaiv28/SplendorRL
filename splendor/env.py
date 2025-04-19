@@ -6,7 +6,7 @@ import random
 import gymnasium as gym
 from gymnasium.spaces import OneOf, Discrete, Dict, MultiDiscrete, Box
 from pettingzoo import AECEnv
-from pettingzoo.utils import agent_selector
+from pettingzoo.utils import agent_selector, BaseWrapper
 import numpy as np
 
 from splendor.player import Player
@@ -14,7 +14,9 @@ from splendor.cards import Development, Noble, Token
 from splendor.tokens import COMBINATIONS
 from splendor.game import Splendor
 
-class Game(AECEnv):
+NUM_ITERS = 200
+
+class SplendorEnv(AECEnv):
    
     metadata = {
         "name": "splendor_v0"
@@ -26,9 +28,11 @@ class Game(AECEnv):
         self.game = Splendor()
          
         
-    def reset(self, seed=None, num_players=2):
+    def reset(self, seed=None, num_players=2, options={}):
+        self.game.reset()
         self.num_players = num_players
-        
+       
+        self.num_steps = 0 
         self.agents = self.possible_agents[:num_players]
         self.rewards = {agent: 0 for agent in self.agents}
         self._cumulative_rewards = {agent: 0 for agent in self.agents}
@@ -36,21 +40,22 @@ class Game(AECEnv):
         self.truncations = {agent: False for agent in self.agents}
         self.infos = {agent: {} for agent in self.agents}
         self.observations = {agent: None for agent in self.agents}
+        self.infos = {agent: {"action_mask": self.game.get_action_mask(agent)} for agent in self.agents}
        
         self._agent_selector = agent_selector(self.agents)
         self.agent_selection = self._agent_selector.next()  
-
-        self.game.reset()
         
+    # TODO : add functionality for reserving random card
+    # TODO : add ability to take tokens when nearing limit
     @functools.lru_cache(maxsize=None)
     def action_space(self, agent):
         return OneOf(
             (
                 Discrete(10),       # Choose 3 tokens
                 Discrete(5),        # Choose 2 tokens
-                Discrete(15),       # Reserve cards
+                Discrete(12),       # Reserve cards
                 Discrete(12),       # Purchase card on board
-                Discrete(3)         # Purchase reserved card
+                Discrete(3),        # Purchase reserved card
             )
         )
          
@@ -83,13 +88,26 @@ class Game(AECEnv):
         obs = {}
         obs["available_tokens"] = np.array([q for _, q in self.game.tokens.items()], dtype=np.int_)
         obs["available_nobles"] = np.array([noble.obs_repr() for noble in self.game.nobles])
-        obs["available_cards"] = np.array([development.obs_repr() for stack in self.game.developments for development in stack])
+        obs["available_cards"] = np.array([development.obs_repr() for stack in self.game.developments.values() for development in stack])
         obs["player"] = self.game.players[agent].obs_repr()
         obs["opponents"] = [self.game.players[a].obs_repr() for a in self.agents if a != agent]
         
         return obs
     
+    #TODO : ACTION MASKING
     def step(self, action):
+        """
+        step(action) takes in an action for the current agent (specified by
+        agent_selection) and needs to update
+        - rewards
+        - _cumulative_rewards (accumulating the rewards)
+        - terminations
+        - truncations
+        - infos
+        - agent_selection (to the next agent)
+        And any internal state used by observe() or render()
+        """
+        
         if (
             self.terminations[self.agent_selection]
             or self.truncations[self.agent_selection]
@@ -106,21 +124,78 @@ class Game(AECEnv):
         subaction = action[1]
         match main_action:
             case 0:
-                self.game.take_three_tokens(agent, subaction)
+                reward = self.game.take_three_tokens(agent, subaction)
             case 1:
-                self.game.take_two_tokens(agent, subaction)
+                reward = self.game.take_two_tokens(agent, subaction)
             case 2:
-                self.game.reserve_card(agent, subaction)
+                reward = self.game.reserve_card(agent, subaction)
             case 3:
-                self.game.purchase_development(agent, subaction)
+                reward = self.game.purchase_development(agent, subaction)
             case 4:
-                self.game.purchase_reserved(agent, subaction)
+                reward = self.game.purchase_reserved(agent, subaction)
             case _:
                 raise ValueError("Main action %s not supported", main_action)
+       
+        self.rewards[agent] = reward
+        self._accumulate_rewards()
+        
+        if self._agent_selector.is_last():
+            self.num_steps += 1
+             
+        self.truncations = {
+            agent: self.num_steps >= NUM_ITERS for agent in self.agents
+        }
+           
+        self.infos = {agent: {
+            "action_mask": self.game.get_action_mask(agent)
+            } for agent in self.agents
+        }
+        
+        winner = self.game.get_winner()
+        if winner is None:
+            self.terminations = {
+                agent: not self.infos[agent]["action_mask"].any()
+                for agent in self.agents}
+        else:
+            self.terminations = {agent: True for agent in self.agents}
+        
+        
+        self.agent_selection = self._agent_selector.next()
+    
+                       
+    def render(self):
+        print(self.game.game_state())
+        
+    def sample(self, mask):
+        valid_actions = np.flatnonzero(mask[0])
+        if len(valid_actions) == 0:
+            raise ValueError("No valid actions in Discrete space mask.")
+        return int(np.random.choice(valid_actions))
+        
+# Converts OneOf space into Discrete space
+class FlattenActionWrapper(BaseWrapper):
+    def __init__(self, env: SplendorEnv):
+        super().__init__(env)
+        self.original_space = env.action_space(self.possible_agents[0])
+        self.mapping = []
+        offset = 0
 
+        for i, space in enumerate(self.original_space.spaces):
+            assert(isinstance(space, Discrete))
+            for j in range(space.n):
+                self.mapping.append((i, j))
 
-
-
-
-
-
+    def discrete_to_composite(self, action):
+        # Convert flattened discrete action to (which_space, action_within_space)
+        space_index, sub_action = self.mapping[action]
+        return (space_index, sub_action)
+    
+    def step(self, action):
+        if action is None:
+            super().step(None)
+        else:
+            super().step(self.discrete_to_composite(action))
+        
+    @functools.lru_cache(maxsize=None)
+    def action_space(self, agent):
+        return Discrete(len(self.mapping))
