@@ -21,6 +21,19 @@ COMBINATIONS = [
     (Token.GREEN, Token.RED, Token.BLACK),
 ]
 
+DUO_COMBINATIONS = [
+    (Token.WHITE, Token.BLUE),
+    (Token.WHITE, Token.GREEN),
+    (Token.WHITE, Token.RED),
+    (Token.WHITE, Token.BLACK),
+    (Token.BLUE, Token.GREEN),
+    (Token.BLUE, Token.RED),
+    (Token.BLUE, Token.BLACK),
+    (Token.GREEN, Token.RED),
+    (Token.GREEN, Token.BLACK),
+    (Token.RED, Token.BLACK),
+]
+
     
 def encode_tokens(tokens: dict[Token, int]):
     return [tokens[token] for token in Token if token in tokens.keys()]

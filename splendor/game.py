@@ -3,7 +3,7 @@ import pickle
 import numpy as np
 from splendor.player import Player
 from splendor.cards import Development, Noble, Token
-from splendor.tokens import COMBINATIONS
+from splendor.tokens import COMBINATIONS, DUO_COMBINATIONS
 
 class Splendor:
     def __init__(self):
@@ -49,10 +49,33 @@ class Splendor:
             
         return 0
     
-    def take_two_tokens(self, agent, action: int):
+    def take_two_same_tokens(self, agent, action: int):
         self.tokens[Token(action)] -= 2
         self.players[agent].tokens[Token(action)] += 2
         
+        return 0
+    
+    def take_two_different_tokens(self, agent, action: int):
+        tokens = DUO_COMBINATIONS[action]
+        for token in tokens:
+            self.tokens[token] -= 1
+            self.players[agent].tokens[token] += 1
+            
+        return 0
+    
+    def take_one_token(self, agent, action: int):
+        token = Token(action)
+        self.tokens[token] -= 1
+        self.players[agent].tokens[token] += 1
+        
+        return 0
+    
+    def return_three_tokens(self, agent, action: int):
+        tokens = COMBINATIONS[action]
+        for token in tokens:
+            self.tokens[token] += 1
+            self.players[agent].tokens[token] -= 1
+            
         return 0
         
     def reserve_card(self, agent, action: int):
@@ -73,7 +96,7 @@ class Splendor:
         
         self.players[agent].reserved_cards.append(card)
         
-        if self.tokens[Token.GOLD] > 0:
+        if self.tokens[Token.GOLD] > 0 and self.players[agent].total_tokens() < 10:
             self.tokens[Token.GOLD] -= 1
             self.players[agent].tokens[Token.GOLD] += 1
         
@@ -114,7 +137,6 @@ class Splendor:
         self.players[agent].prestige += development.prestige
         self.players[agent].developments[development.bonus] += 1
     
-    # TODO : implement ability to take two tokens if you have 8, or 1 if u have 9
     def get_action_mask(self, agent):
         player = self.players[agent]
         
@@ -123,16 +145,33 @@ class Splendor:
         reserve = np.ones(12, dtype=np.int8)
         purchase = np.ones(12, dtype=np.int8)
         purchase_reserved = np.ones(3, dtype=np.int8)
+        choose_2_different = np.ones(10, dtype=np.int8)
+        choose_1 = np.ones(5, dtype=np.int8)
+        return_3 = np.zeros(10, dtype=np.int8)
 
         if player.total_tokens() > 7:
             choose_3 = np.zeros(10, dtype=np.int8)
+            return_3 = np.ones(10, dtype=np.int8)
+            
+        for token, count in self.players[agent].tokens.items():
+            if token == Token.GOLD:
+                continue
+            if count <= 0:
+                for i, combo in enumerate(COMBINATIONS):
+                    if token in combo:
+                        return_3[i] = 0
+                        
         for token, count in self.tokens.items():
             if token == Token.GOLD:
                 continue
             if count <= 0:
+                choose_1[token.value] = 0
                 for i, c in enumerate(COMBINATIONS):
                     if token in c:
                         choose_3[i] = 0
+                for i, c in enumerate(DUO_COMBINATIONS):
+                    if token in c:
+                        choose_2_different[i] = 0
             if count < 4:
                 choose_2[token.value] = 0
                 
@@ -150,8 +189,16 @@ class Splendor:
                 continue
             if not player.is_purchasable(player.reserved_cards[i]):
                 purchase_reserved[i] = 0
-                
-        return np.concat((choose_3, choose_2, reserve, purchase, purchase_reserved))
+               
+        if player.total_tokens() != 8:
+            choose_2_different = np.zeros(10, dtype=np.int8)
+        if player.total_tokens() != 9:
+            choose_1 = np.zeros(5, np.int8)
+            
+        mask = np.concat((choose_3, choose_2, reserve, purchase, purchase_reserved,
+                          choose_2_different, choose_1, return_3))
+        
+        return mask
                 
         
     def game_state(self) -> str:

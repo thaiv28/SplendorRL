@@ -46,16 +46,19 @@ class SplendorEnv(AECEnv):
         self.agent_selection = self._agent_selector.next()  
         
     # TODO : add functionality for reserving random card
-    # TODO : add ability to take tokens when nearing limit
+    # TODO: add ability to return 1 token when reserving and gaining gold
     @functools.lru_cache(maxsize=None)
     def action_space(self, agent):
         return OneOf(
             (
                 Discrete(10),       # Choose 3 tokens
-                Discrete(5),        # Choose 2 tokens
+                Discrete(5),        # Choose 2 same tokens
                 Discrete(12),       # Reserve cards
                 Discrete(12),       # Purchase card on board
                 Discrete(3),        # Purchase reserved card
+                Discrete(10),       # Choose 2 different tokens (capped)
+                Discrete(5),        # Choose 1 token (capped)
+                Discrete(10),       # Return 3 tokens 
             )
         )
          
@@ -126,13 +129,19 @@ class SplendorEnv(AECEnv):
             case 0:
                 reward = self.game.take_three_tokens(agent, subaction)
             case 1:
-                reward = self.game.take_two_tokens(agent, subaction)
+                reward = self.game.take_two_same_tokens(agent, subaction)
             case 2:
                 reward = self.game.reserve_card(agent, subaction)
             case 3:
                 reward = self.game.purchase_development(agent, subaction)
             case 4:
                 reward = self.game.purchase_reserved(agent, subaction)
+            case 5:
+                reward = self.game.take_two_different_tokens(agent, subaction)
+            case 6:
+                reward = self.game.take_one_token(agent, subaction)
+            case 7:
+                reward = self.game.return_three_tokens(agent, subaction)
             case _:
                 raise ValueError("Main action %s not supported", main_action)
        
@@ -158,12 +167,14 @@ class SplendorEnv(AECEnv):
                 for agent in self.agents}
         else:
             self.terminations = {agent: True for agent in self.agents}
-        
-        
-        self.agent_selection = self._agent_selector.next()
+       
+        # if returned three tokens, that player gets to go again 
+        if main_action != 7:
+            self.agent_selection = self._agent_selector.next()
     
                        
     def render(self):
+        print(f"AGENT'S TURN: {self.agent_selection}")
         print(self.game.game_state())
         
     def sample(self, mask):

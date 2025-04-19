@@ -22,6 +22,9 @@ def main():
         (24-34): Take 3 token combination
         (35-39): Take 2 token combination
         (40-42): Purchase reserved card
+        (43-52): Take 2 different tokens (capped)
+        (53-57): Take 1 token (capped)
+        (58-62): Return 3 tokens
         """.replace("        ", "")
        
         while(True): 
@@ -39,9 +42,15 @@ def main():
         elif action < 35:
             game.take_three_tokens(player, action - 24)
         elif action < 40:
-            game.take_two_tokens(player, action - 35)
+            game.take_two_different_tokens(player, action - 35)
         elif action < 43:
             game.purchase_reserved(player, action - 40)
+        elif action < 53:
+            game.take_two_same_tokens(player, action - 43)
+        elif action < 58:
+            game.take_one_token(player, action - 53)
+        elif action< 63:
+            game.return_three_tokens(player, action - 58)
         else:
             assert(False)
         

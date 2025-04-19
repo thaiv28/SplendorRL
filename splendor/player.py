@@ -18,7 +18,8 @@ class Player:
         
     def total_tokens(self):
         return sum(self.tokens.values())
-    
+   
+    # TODO : take into account gold when determining if card is purchasable 
     def is_purchasable(self, development: Development):
         for t, cost in development.cost.items():
             if cost > self.tokens[t]:
