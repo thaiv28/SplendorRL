@@ -10,8 +10,10 @@ class Development:
         self.cost = cost
         
     def obs_repr(self):
-        return np.array([self.level, self.bonus.value, self.prestige] + encode_tokens(self.cost),
-                        dtype=np.int_)
+        bonus_encoding = np.zeros(5)
+        bonus_encoding[self.bonus.value] = 1
+        return np.concatenate([np.array([self.level, self.prestige] + encode_tokens(self.cost),
+                        dtype=np.int_), bonus_encoding])
         
     def __str__(self):
         return f"{self.bonus.name} ({self.prestige}) -- {list(self.cost.values())}"

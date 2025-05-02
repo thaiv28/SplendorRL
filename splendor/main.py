@@ -20,7 +20,6 @@ def main():
             action = env.action_space(agent).sample(mask=mask)
             print(action)
 
-        breakpoint()
         env.step(action)
         env.render() 
     env.close()

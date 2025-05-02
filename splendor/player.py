@@ -17,23 +17,53 @@ class Player:
         self.reserved_cards: list[Development] = []
         
     def total_tokens(self):
-        return sum(self.tokens.values())
+        count = sum(self.tokens.values())
+        if count > 10:
+            raise Exception("Player has total tokens > 10")
+        
+        return count
    
-    # TODO : take into account gold when determining if card is purchasable 
     def is_purchasable(self, development: Development):
+        gold_required = 0
         for t, cost in development.cost.items():
-            if cost > self.tokens[t]:
+            tokens_needed = cost - self.developments[t]
+            if tokens_needed < 0:
+                tokens_needed = 0
+                
+            if tokens_needed > self.tokens[t]:
+                gold_required += tokens_needed - self.tokens[t]
+                
+            if gold_required > self.tokens[Token.GOLD]:
                 return False
             
         return True
         
     def obs_repr(self):
-        return {
+        d = {
             "prestige": np.int_(self.prestige),
             "tokens": np.array(encode_tokens(self.tokens)),
             "developments": np.array(encode_tokens(self.developments)),
             "reserved_cards": np.array([d.obs_repr() for d in self.reserved_cards])
         }
+        
+        if len(d["reserved_cards"]) < 3:
+            for _ in range(len(d["reserved_cards"]), 3):
+                d["reserved_cards"] = np.append(d["reserved_cards"], np.zeros(12))
+        
+        expected_sizes = {
+            "prestige": 1,
+            "tokens": 6,
+            "developments": 5,
+            "reserved_cards": 3 * 12
+        }
+        
+        for key, size in expected_sizes.items():
+            if d[key].size != size:
+                raise ValueError(f"Size of {key} should be {size}, but is {d[key].size}")
+           
+        return d
+        
+        
         
     def __str__(self):
         s = f"TOKENS ({list(self.tokens.values())}), \

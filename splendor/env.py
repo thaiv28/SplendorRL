@@ -4,7 +4,8 @@ import pickle
 import random
 
 import gymnasium as gym
-from gymnasium.spaces import OneOf, Discrete, Dict, MultiDiscrete, Box
+from gymnasium.spaces import OneOf, Discrete, Dict, MultiDiscrete, Box, Tuple
+from gymnasium.spaces.utils import flatten, flatten_space
 from pettingzoo import AECEnv
 from pettingzoo.utils import agent_selector, BaseWrapper
 import numpy as np
@@ -22,18 +23,17 @@ class SplendorEnv(AECEnv):
         "name": "splendor_v0"
     } 
     
-    def __init__(self):
+    def __init__(self, num_players=2):
         self.possible_agents = [f"player_{i}" for i in range(4)]
         self.generator = None
         self.game = Splendor()
-         
+        self.num_players=num_players
         
-    def reset(self, seed=None, num_players=2, options={}):
+    def reset(self, seed=None, options={}):
         self.game.reset()
-        self.num_players = num_players
        
         self.num_steps = 0 
-        self.agents = self.possible_agents[:num_players]
+        self.agents = self.possible_agents[:self.num_players]
         self.rewards = {agent: 0 for agent in self.agents}
         self._cumulative_rewards = {agent: 0 for agent in self.agents}
         self.terminations = {agent: False for agent in self.agents}
@@ -67,22 +67,22 @@ class SplendorEnv(AECEnv):
         return Dict(
             {
                 "available_tokens": MultiDiscrete([6] * 6),
-                "available_nobles": Box(low=0, high=10, shape=(3, 6), dtype=np.int_),
+                "available_nobles": Box(low=0, high=4, shape=(3, 6), dtype=np.int_),
                 "available_cards": Box(low=0, high=10, shape=(12, 12), dtype=np.int_),
                 "player":
-                    {
+                    Dict({
                             "prestige": Box(low=0, high=40, dtype=np.int_),
                             "tokens": MultiDiscrete([5] * 6),
-                            "developments": MultiDiscrete([5] * 5),
+                            "developments": MultiDiscrete([20] * 5),
                             "reserved_cards": Box(low=0, high=10, shape=(3, 12)),
-                    },
+                    }),
                 "opponents":
-                    [{
+                    Tuple((Dict({
                         "prestige": Box(low=0, high=40, dtype=np.int_),
                         "tokens": MultiDiscrete([5] * 6),
-                        "developments": MultiDiscrete([5] * 5),
+                        "developments": MultiDiscrete([20] * 5),
                         "reserved_cards": Box(low=0, high=10, shape=(3, 12)),
-                    } * (self.num_players - 1)]
+                    }) for _ in range(self.num_players - 1)))
             }
         )
         
@@ -90,14 +90,32 @@ class SplendorEnv(AECEnv):
     def observe(self, agent):
         obs = {}
         obs["available_tokens"] = np.array([q for _, q in self.game.tokens.items()], dtype=np.int_)
-        obs["available_nobles"] = np.array([noble.obs_repr() for noble in self.game.nobles])
-        obs["available_cards"] = np.array([development.obs_repr() for stack in self.game.developments.values() for development in stack])
-        obs["player"] = self.game.players[agent].obs_repr()
-        obs["opponents"] = [self.game.players[a].obs_repr() for a in self.agents if a != agent]
         
+        obs["available_nobles"] = np.array([noble.obs_repr() for noble in self.game.nobles])
+        if len(self.game.nobles) < 3:
+            for _ in range(len(self.game.nobles, 3)):
+                obs["available_nobles"] = np.concatenate([obs["available_nobles"], np.zeros(6)])
+                
+        obs["available_cards"] = np.array([development.obs_repr() for stack in self.game.developments.values() for development in stack])
+        if len(obs["available_cards"]) < 12:
+            for _ in range(len(obs["available_cards"]), 12):
+                obs["available_cards"] = np.append(obs["available_cards"], np.zeros(12))
+                
+        EXPECTED_SIZES = {
+            "available_tokens": 6,
+            "available_nobles": 3 * 6,
+            "available_cards":  12 * 12
+        }
+        
+        for key, size in EXPECTED_SIZES.items():
+            if obs[key].size != size:
+                raise ValueError(f"Size of {key} should be {size}, but is {obs[key].size}")
+                
+        obs["player"] = self.game.players[agent].obs_repr()
+        obs["opponents"] = (self.game.players[a].obs_repr() for a in self.agents if a != agent)
+       
         return obs
     
-    #TODO : ACTION MASKING
     def step(self, action):
         """
         step(action) takes in an action for the current agent (specified by
@@ -122,6 +140,7 @@ class SplendorEnv(AECEnv):
             return
         
         agent = self.agent_selection
+        self._cumulative_rewards[agent] = 0
         # handle game logic depending on the action. assume all actions are valid (invalid would be masked)
         main_action = action[0]
         subaction = action[1]
@@ -144,12 +163,10 @@ class SplendorEnv(AECEnv):
                 reward = self.game.return_three_tokens(agent, subaction)
             case _:
                 raise ValueError("Main action %s not supported", main_action)
-       
+      
+        # print(f"{agent} should recieve reward of {reward}") 
         self.rewards[agent] = reward
-        self._accumulate_rewards()
         
-        if self._agent_selector.is_last():
-            self.num_steps += 1
              
         self.truncations = {
             agent: self.num_steps >= NUM_ITERS for agent in self.agents
@@ -160,20 +177,32 @@ class SplendorEnv(AECEnv):
             } for agent in self.agents
         }
         
-        winner = self.game.get_winner()
-        if winner is None:
-            self.terminations = {
-                agent: not self.infos[agent]["action_mask"].any()
-                for agent in self.agents}
-        else:
-            self.terminations = {agent: True for agent in self.agents}
        
+        if self._agent_selector.is_last():
+            # print(f"{agent=}")
+            winner = self.game.get_winner()
+            if winner:
+                self.terminations = {agent: True for agent in self.agents}
+                self.rewards[winner] += 100
+                
+                #print(f"{winner} should recieve extra 100 points for winning. Note: it is {agent}'s turn.")
+            self.num_steps += 1
+            self._accumulate_rewards()
+            self._clear_rewards()
+        # print(f"__________________") 
+        # print(f"Current Agent: {agent}")
+        # print(f"Current rewards: {self.rewards}")
+        # print(f"Pre accumulation cumulative rewards: {self._cumulative_rewards}")
+        # print(f"Post accumulation cumulative rewards: {self._cumulative_rewards}")
+
         # if returned three tokens, that player gets to go again 
         if main_action != 7:
             self.agent_selection = self._agent_selector.next()
-    
+        
                        
     def render(self):
+        print("____________________________________")
+        print(f"Move {self.num_steps} of {NUM_ITERS}")
         print(f"AGENT'S TURN: {self.agent_selection}")
         print(self.game.game_state())
         
@@ -210,3 +239,16 @@ class FlattenActionWrapper(BaseWrapper):
     @functools.lru_cache(maxsize=None)
     def action_space(self, agent):
         return Discrete(len(self.mapping))
+    
+
+class FlattenObservationWrapper(BaseWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+
+    def observation_space(self, agent):
+        return flatten_space(self.env.observation_space(agent))
+
+    def observe(self, agent):
+        original_obs = self.env.observe(agent)
+        return flatten(self.env.observation_space(agent), original_obs)
+    

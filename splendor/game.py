@@ -89,7 +89,10 @@ class Splendor:
                 
             index = action % 4
             card = self.developments[level][index]
-            self.developments[level][index] = self.development_stack[level].pop()
+            if len(self.development_stack[level]) != 0:
+                self.developments[level][index] = self.development_stack[level].pop()
+            else:
+                self.developments[level].pop(index)
         else:
             level = action - 11
             card = self.development_stack[level].pop()
@@ -113,7 +116,10 @@ class Splendor:
         
         card = self.developments[level][index % 4]
         self._purchase_development_helper(agent, card)
-        self.developments[level][index] = self.development_stack[level].pop()
+        if len(self.development_stack[level]) != 0:
+            self.developments[level][index] = self.development_stack[level].pop()
+        else:
+            self.developments[level].pop(index)
         
         self.ongoing = self.is_ongoing()
         
@@ -127,16 +133,33 @@ class Splendor:
         return card.prestige
     
     def _purchase_development_helper(self, agent, development: Development):
+        player = self.players[agent]
         for token, cost in development.cost.items():
             if cost == 0:
                 continue
-            tokens_spent = cost - self.players[agent].developments[token]
-            self.players[agent].tokens[token] -= tokens_spent
-            self.tokens[token] += tokens_spent
+            
+            tokens_needed = cost - player.developments[token]
+            if tokens_needed < 0:
+                tokens_needed = 0
+                
+            if tokens_needed > player.tokens[token]:
+                gold_used = tokens_needed - player.tokens[token]
+                player.tokens[Token.GOLD] -= gold_used
+                self.tokens[Token.GOLD] += gold_used
+                
+                tokens_needed -= gold_used
+                
+            player.tokens[token] -= tokens_needed
+            self.tokens[token] += tokens_needed
             
         self.players[agent].prestige += development.prestige
         self.players[agent].developments[development.bonus] += 1
-    
+        
+        for token, count in player.tokens.items():
+            if count < 0:
+                raise Exception("Player has token count less than zero")
+   
+    # TODO: invalidate buying empty cards
     def get_action_mask(self, agent):
         player = self.players[agent]
         
@@ -148,11 +171,10 @@ class Splendor:
         choose_2_different = np.ones(10, dtype=np.int8)
         choose_1 = np.ones(5, dtype=np.int8)
         return_3 = np.zeros(10, dtype=np.int8)
-
+        
         if player.total_tokens() > 7:
-            choose_3 = np.zeros(10, dtype=np.int8)
             return_3 = np.ones(10, dtype=np.int8)
-            
+
         for token, count in self.players[agent].tokens.items():
             if token == Token.GOLD:
                 continue
@@ -182,6 +204,11 @@ class Splendor:
             for i, d in enumerate(self.developments[level]):
                 if not player.is_purchasable(d):
                     purchase[4*(level - 1) + i] = 0
+            
+            # for when we run out of developments to purchase and board becomes empty
+            for i in range(len(self.developments[level]), 4):
+                purchase[4*(level - 1) + i] = 0
+                reserve[4*(level - 1) + i] = 0
                     
         for i in range(3):
             if i >= len(player.reserved_cards):
@@ -190,14 +217,20 @@ class Splendor:
             if not player.is_purchasable(player.reserved_cards[i]):
                 purchase_reserved[i] = 0
                
-        if player.total_tokens() != 8:
+        if player.total_tokens() > 8:
             choose_2_different = np.zeros(10, dtype=np.int8)
-        if player.total_tokens() != 9:
+            choose_2 = np.zeros(5, dtype=np.int8)
+        if player.total_tokens() > 9:
             choose_1 = np.zeros(5, np.int8)
+            
+        if player.total_tokens() > 7:
+            choose_3 = np.zeros(10, dtype=np.int8)
+        
             
         mask = np.concat((choose_3, choose_2, reserve, purchase, purchase_reserved,
                           choose_2_different, choose_1, return_3))
-        
+        if not np.any(mask):
+            raise ValueError("Mask allows for no actions.")
         return mask
                 
         
