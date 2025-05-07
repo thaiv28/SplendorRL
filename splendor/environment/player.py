@@ -2,8 +2,8 @@ from collections import defaultdict
 
 import numpy as np
 
-from splendor.cards import Development
-from splendor.tokens import Token, encode_tokens
+from splendor.environment.cards import Development
+from splendor.environment.tokens import Token, encode_tokens
 
 class Player:
     def __init__(self):
@@ -37,7 +37,16 @@ class Player:
                 return False
             
         return True
-        
+
+    @staticmethod
+    def empty_obs_repr():
+        return {
+            "prestige": 0,
+            "tokens": np.zeros(6, dtype=np.int_),
+            "developments": np.zeros(5, dtype=np.int_),
+            "reserved_cards": np.zeros(36, dtype=np.int_),
+        }
+
     def obs_repr(self):
         d = {
             "prestige": np.int_(self.prestige),

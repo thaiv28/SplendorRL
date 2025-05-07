@@ -1,6 +1,6 @@
 import numpy as np
 
-from splendor.tokens import Token, encode_tokens
+from splendor.environment.tokens import Token, encode_tokens
 
 class Development:
     def __init__(self, level: int, bonus: Token, prestige: int, cost: dict[Token, int]):

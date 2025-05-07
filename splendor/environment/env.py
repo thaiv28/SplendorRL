@@ -1,4 +1,4 @@
-import functools
+import functools   
 import os
 import pickle
 import random
@@ -9,11 +9,10 @@ from gymnasium.spaces.utils import flatten, flatten_space
 from pettingzoo import AECEnv
 from pettingzoo.utils import agent_selector, BaseWrapper
 import numpy as np
-
-from splendor.player import Player
-from splendor.cards import Development, Noble, Token
-from splendor.tokens import COMBINATIONS
-from splendor.game import Splendor
+from splendor.environment.player import Player
+from splendor.environment.cards import Development, Noble, Token
+from splendor.environment.tokens import COMBINATIONS
+from splendor.environment.game import Splendor
 
 NUM_ITERS = 200
 
@@ -35,6 +34,7 @@ class SplendorEnv(AECEnv):
         self.num_steps = 0 
         self.agents = self.possible_agents[:self.num_players]
         self.rewards = {agent: 0 for agent in self.agents}
+        self.temp_rewards = {agent: 0 for agent in self.agents}
         self._cumulative_rewards = {agent: 0 for agent in self.agents}
         self.terminations = {agent: False for agent in self.agents}
         self.truncations = {agent: False for agent in self.agents}
@@ -112,7 +112,10 @@ class SplendorEnv(AECEnv):
                 raise ValueError(f"Size of {key} should be {size}, but is {obs[key].size}")
                 
         obs["player"] = self.game.players[agent].obs_repr()
-        obs["opponents"] = (self.game.players[a].obs_repr() for a in self.agents if a != agent)
+        obs["opponents"] = np.array([self.game.players[a].obs_repr() for a in self.agents if a != agent])
+        if obs["opponents"].size != self.num_players - 1:
+            for _ in range(obs["opponents"].size, self.num_players - 1):
+                obs["opponents"] = np.append(obs["opponents"], np.array(Player.empty_obs_repr()))
        
         return obs
     
@@ -160,12 +163,13 @@ class SplendorEnv(AECEnv):
             case 6:
                 reward = self.game.take_one_token(agent, subaction)
             case 7:
+                # TODO: return 3 tokens should be combined with take_two_dffierent or take_one token. all moves should be self contained to one action. k
                 reward = self.game.return_three_tokens(agent, subaction)
             case _:
                 raise ValueError("Main action %s not supported", main_action)
       
         # print(f"{agent} should recieve reward of {reward}") 
-        self.rewards[agent] = reward
+        self.temp_rewards[agent] = reward
         
              
         self.truncations = {
@@ -187,8 +191,11 @@ class SplendorEnv(AECEnv):
                 
                 #print(f"{winner} should recieve extra 100 points for winning. Note: it is {agent}'s turn.")
             self.num_steps += 1
-            self._accumulate_rewards()
-            self._clear_rewards()
+            self.rewards = {k: v for k, v in self.temp_rewards.items()}
+        else:
+            self._clear_rewards()  
+
+        self._accumulate_rewards()
         # print(f"__________________") 
         # print(f"Current Agent: {agent}")
         # print(f"Current rewards: {self.rewards}")
@@ -245,6 +252,7 @@ class FlattenObservationWrapper(BaseWrapper):
     def __init__(self, env):
         super().__init__(env)
 
+    @functools.lru_cache(maxsize=None)
     def observation_space(self, agent):
         return flatten_space(self.env.observation_space(agent))
 

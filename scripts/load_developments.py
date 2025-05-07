@@ -2,8 +2,8 @@ import pickle
 
 import pandas as pd
 
-from splendor.cards import Development
-from splendor.tokens import Token
+from splendor.environment.cards import Development
+from splendor.environment.tokens import Token
 
 # Load the spreadsheet
 file_path = '../files/raw_developments.csv'

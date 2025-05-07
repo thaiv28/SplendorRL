@@ -3,8 +3,8 @@ import pickle
 import pandas as pd
 import numpy as np
 
-from splendor.cards import Development, Noble
-from splendor.tokens import Token
+from splendor.environment.cards import Development, Noble
+from splendor.environment.tokens import Token
 
 # Load the spreadsheet
 file_path = '../files/raw_nobles.csv'

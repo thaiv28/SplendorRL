@@ -8,7 +8,7 @@ from gymnasium.spaces import Discrete
 
 from collections import defaultdict
 
-from splendor.env import SplendorEnv, FlattenActionWrapper, FlattenObservationWrapper
+from splendor.environment.env import SplendorEnv, FlattenActionWrapper, FlattenObservationWrapper
 
 def mlp(sizes, activation=nn.Tanh, output_activation=nn.Identity):
     layers = []
@@ -51,14 +51,15 @@ def train(lr=1e-2, epochs=50, batch_size=5000, hidden_sizes=[32], render=True):
     optimizer = Adam(policy_network.parameters(), lr=lr)
     
     def train_one_epoch():
-        batch_obs = {}
-        batch_acts = {}
-        batch_weights = {}
-        batch_rets = {}
-        batch_lens = {}
+        batch_obs = defaultdict(lambda: [])
+        batch_acts = defaultdict(lambda: [])
+        batch_weights = defaultdict(lambda: [])
+        batch_rets = defaultdict(lambda: [])
+        batch_lens = defaultdict(lambda: [])
+
         
         env.reset()
-        ep_rews = {}
+        ep_rews = defaultdict(lambda: [])
         batch_complete = False
        
         # problem: agent 1 is chosen by env.last(). agent 1 takes action. agent 1 wins.
@@ -71,75 +72,77 @@ def train(lr=1e-2, epochs=50, batch_size=5000, hidden_sizes=[32], render=True):
         # agent0 is returned by env.last(). agent0 gets reward and termination.
         # end game and all is well!
         
+        # agent0 is returned by env.last(). agent0 gets reward and termination.
+        # end game and all is well!
         for agent in env.agent_iter():
             #agent = env.agent_selection 
             if render:
                 env.render()
-               
-            # print(f"New loop. Getting reward for {agent}") 
-            obs, rew, term, trunc, info = env.last()
-            # if rew != 0:
-            #     print(f"{rew=} for {agent=}")
-            
-            
-            if term or trunc:
-                action = None
-            else:
-                action = get_action(torch.as_tensor(obs, dtype=torch.float32),
-                                mask=torch.from_numpy(info["action_mask"]))
-                
-            env.step(action)
-            #print(f"Finished action for {agent}")
-           
-            if action is not None:
-                batch_obs[agent] = batch_obs.get(agent, []) + [(obs.copy())]
-                batch_acts[agent] = batch_acts.get(agent, []) + [action]
-                
-            ep_rews[agent] = ep_rews.get(agent, []) + [rew]
-            
-            if term or trunc:
-                # problematic cause rewards tensor is different size than action tensor.
-                # we are addinga reward without a corresponding action
-                for agent in env._cumulative_rewards:
-                    ep_rews[agent].append(env._cumulative_rewards[agent])
-                    
-                for a in ep_rews:
-                    ep_rews[a].pop(0)
-                    
-                ep_ret = {a: sum(ret) for a, ret in ep_rews.items()} 
-                ep_len = len(ep_rews[agent])
-                
-                for a in ep_ret:
-                    batch_rets[a] = batch_rets.get(a, []) + [ep_ret[a]]
-                    batch_lens[a] = batch_lens.get(a, []) + [ep_len]
-                    batch_weights[a] = batch_weights.get(a, []) + [ep_ret[a]] * ep_len
-                
-                assert(len(batch_acts[agent]) == len(batch_weights.get(agent, []))) 
-                env.reset()
-                ep_rews = {}
 
+            while True:
+                # get observation
+                # get action from model
+                # get reward
+                # if reward is -1, loop again. else, break from loop.
+                obs, _, term, trunc, info = env.last()
+
+                if term or trunc:
+                    break
+
+                action = get_action(torch.as_tensor(obs, dtype=torch.float32),
+                                    mask=torch.from_numpy(info["action_mask"]))
+                env.step(action)
+
+                _, rew, _, _, _ = env.last()
+
+                batch_obs[agent].append(obs.copy())
+                batch_acts[agent].append(action)
+                ep_rews[agent].append(rew)
+
+                if rew == -1:
+                    continue
+                else:
+                    break
+
+
+            if term or trunc:
+                for agent in env._cumulative_rewards:
+                    ep_rews[agent][-1] += env._cumulative_rewards[agent]
+
+                ep_returns = {a: sum(rews) for a, rews in ep_rews.items()}
+                ep_length = {a: len(rews) for a, rews in ep_rews.items()}
+
+                for agent in ep_returns:
+                    batch_rets[agent].append(ep_returns[agent])
+                    batch_lens[agent].append(ep_length[agent])
+                    batch_weights[agent] += [ep_returns[agent]] * ep_length[agent]
+
+                env.reset()
+                ep_rews = defaultdict(lambda: [])
+                
                 if len(batch_obs[agent]) > batch_size:
                     break
-        
-        breakpoint()
+
         optimizer.zero_grad()
-        batch_losses = torch.zeros(len(batch_obs))
+        batch_losses = {}
         for i, agent in enumerate(batch_obs):
             # efficiency reasons
-            batch_obs[agent] = np.array(batch_obs[agent])
-            batch_losses[i] = compute_loss(obs=torch.as_tensor(batch_obs[agent], dtype=torch.float32),
+            np_batch_obs = np.array(batch_obs[agent])
+            batch_loss = compute_loss(obs=torch.as_tensor(np_batch_obs, dtype=torch.float32),
                                   action=torch.as_tensor(batch_acts[agent], dtype=torch.int32),
                                   ret=torch.as_tensor(batch_weights[agent], dtype=torch.float32))
-            breakpoint()
-             
-        batch_loss.backward()
+            batch_losses[agent] = batch_loss
+            batch_loss.backward()
+
         optimizer.step()
-        return batch_loss, batch_rets, batch_lens
+        return batch_losses, batch_rets, batch_lens
     
     for i in range(epochs):
-        batch_loss, batch_rets, batch_lens = train_one_epoch()
-        print('epoch: %3d \t loss: %.3f \t return: %.3f \t ep_len: %.3f'%
-                (i, batch_loss, np.mean(batch_rets), np.mean(batch_lens)))
+        batch_losses, batch_rets, batch_lens = train_one_epoch()
+        print('epoch: %3d: '%i)
+        for agent in batch_losses:
+            print('agent %s \t loss: %.3f \t return: %.3f \t ep_len: %.3f'%
+                  (agent, batch_losses[agent], np.mean(batch_rets[agent]), np.mean(batch_lens[agent])))
     
 if __name__=="__main__":
     train(render=False)

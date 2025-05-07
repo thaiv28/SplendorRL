@@ -1,9 +1,9 @@
 import os
 import pickle
 import numpy as np
-from splendor.player import Player
-from splendor.cards import Development, Noble, Token
-from splendor.tokens import COMBINATIONS, DUO_COMBINATIONS
+from splendor.environment.player import Player
+from splendor.environment.cards import Development, Noble, Token
+from splendor.environment.tokens import COMBINATIONS, DUO_COMBINATIONS
 
 class Splendor:
     def __init__(self):
@@ -76,7 +76,7 @@ class Splendor:
             self.tokens[token] += 1
             self.players[agent].tokens[token] -= 1
             
-        return 0
+        return -1
         
     def reserve_card(self, agent, action: int):
         if action < 12:

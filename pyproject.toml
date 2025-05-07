@@ -10,6 +10,9 @@ python = "^3.12"
 gymnasium = "^1.1.1"
 pettingzoo = "^1.24.3"
 pandas = "^2.2.3"
+torch = "^2.6.0"
+supersuit = "^3.9.3"
+pytest = "^8.3.5"
 
 
 [build-system]

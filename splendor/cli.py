@@ -1,6 +1,6 @@
 import argparse
 
-from splendor.game import Splendor
+from splendor.environment.game import Splendor
 
 def main():
     parser = argparse.ArgumentParser("splendor")

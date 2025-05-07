@@ -1,4 +1,4 @@
-from splendor.env import SplendorEnv, FlattenActionWrapper
+from splendor.environment.env import SplendorEnv, FlattenActionWrapper
 
 def main():
     env = SplendorEnv()
