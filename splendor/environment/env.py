@@ -34,7 +34,6 @@ class SplendorEnv(AECEnv):
         self.num_steps = 0 
         self.agents = self.possible_agents[:self.num_players]
         self.rewards = {agent: 0 for agent in self.agents}
-        self.temp_rewards = {agent: 0 for agent in self.agents}
         self._cumulative_rewards = {agent: 0 for agent in self.agents}
         self.terminations = {agent: False for agent in self.agents}
         self.truncations = {agent: False for agent in self.agents}
@@ -68,18 +67,18 @@ class SplendorEnv(AECEnv):
             {
                 "available_tokens": MultiDiscrete([6] * 6),
                 "available_nobles": Box(low=0, high=4, shape=(3, 6), dtype=np.int_),
-                "available_cards": Box(low=0, high=10, shape=(12, 12), dtype=np.int_),
+                    "available_cards": Box(low=0, high=10, shape=(12, 12), dtype=np.int_),
                 "player":
                     Dict({
                             "prestige": Box(low=0, high=40, dtype=np.int_),
-                            "tokens": MultiDiscrete([5] * 6),
+                            "tokens": MultiDiscrete([6] * 6),
                             "developments": MultiDiscrete([20] * 5),
                             "reserved_cards": Box(low=0, high=10, shape=(3, 12)),
                     }),
                 "opponents":
                     Tuple((Dict({
                         "prestige": Box(low=0, high=40, dtype=np.int_),
-                        "tokens": MultiDiscrete([5] * 6),
+                        "tokens": MultiDiscrete([6] * 6),
                         "developments": MultiDiscrete([20] * 5),
                         "reserved_cards": Box(low=0, high=10, shape=(3, 12)),
                     }) for _ in range(self.num_players - 1)))
@@ -169,9 +168,6 @@ class SplendorEnv(AECEnv):
                 raise ValueError("Main action %s not supported", main_action)
       
         # print(f"{agent} should recieve reward of {reward}") 
-        self.temp_rewards[agent] = reward
-        
-             
         self.truncations = {
             agent: self.num_steps >= NUM_ITERS for agent in self.agents
         }
@@ -180,8 +176,19 @@ class SplendorEnv(AECEnv):
             "action_mask": self.game.get_action_mask(agent)
             } for agent in self.agents
         }
-        
        
+        self.rewards[agent] = reward
+
+        # Update cumulative rewards dictionary. Update BEFORE adding win reward, because win
+        # reward is accounted for in algorithm loop. This is because winner is only determined
+        # once everyone has had the same number of turns.
+
+        # Ex: player 0 gets 15 pp. player 0 does not "win" until player 1 has gone, because
+        # player 1 could get 16 pp in their turn. We cannot assume player 0 won just because
+        # they reached 15 pp.
+        self._accumulate_rewards()
+        self._clear_rewards()      
+
         if self._agent_selector.is_last():
             # print(f"{agent=}")
             winner = self.game.get_winner()
@@ -189,13 +196,9 @@ class SplendorEnv(AECEnv):
                 self.terminations = {agent: True for agent in self.agents}
                 self.rewards[winner] += 100
                 
-                #print(f"{winner} should recieve extra 100 points for winning. Note: it is {agent}'s turn.")
             self.num_steps += 1
-            self.rewards = {k: v for k, v in self.temp_rewards.items()}
-        else:
-            self._clear_rewards()  
 
-        self._accumulate_rewards()
+
         # print(f"__________________") 
         # print(f"Current Agent: {agent}")
         # print(f"Current rewards: {self.rewards}")
@@ -203,9 +206,9 @@ class SplendorEnv(AECEnv):
         # print(f"Post accumulation cumulative rewards: {self._cumulative_rewards}")
 
         # if returned three tokens, that player gets to go again 
-        if main_action != 7:
-            self.agent_selection = self._agent_selector.next()
-        
+       
+    def next_agent(self):
+        self.agent_selection = self._agent_selector.next()
                        
     def render(self):
         print("____________________________________")

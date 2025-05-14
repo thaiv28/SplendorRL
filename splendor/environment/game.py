@@ -1,6 +1,8 @@
 import os
 import pickle
 import numpy as np
+from numpy.ma import make_mask
+
 from splendor.environment.player import Player
 from splendor.environment.cards import Development, Noble, Token
 from splendor.environment.tokens import COMBINATIONS, DUO_COMBINATIONS
@@ -18,7 +20,7 @@ class Splendor:
        
         self.players = {f"player_{i}": Player() for i in range(num_players)}
         
-        d_pickle = os.path.dirname(__file__) + "/../files/developments.pickle"
+        d_pickle = os.path.dirname(__file__) + "/../../files/developments.pickle"
         with open(d_pickle, 'rb') as file:
             all_developments = pickle.load(file)
             self.generator.shuffle(all_developments)
@@ -32,7 +34,7 @@ class Splendor:
             for i, stack in self.development_stack.items()
         }
             
-        n_pickle = os.path.dirname(__file__) + "/../files/nobles.pickle"
+        n_pickle = os.path.dirname(__file__) + "/../../files/nobles.pickle"
         with open(n_pickle, 'rb') as file:
             noble_stack = pickle.load(file)
             self.generator.shuffle(noble_stack)
@@ -159,7 +161,6 @@ class Splendor:
             if count < 0:
                 raise Exception("Player has token count less than zero")
    
-    # TODO: invalidate buying empty cards
     def get_action_mask(self, agent):
         player = self.players[agent]
         
@@ -229,6 +230,8 @@ class Splendor:
             
         mask = np.concat((choose_3, choose_2, reserve, purchase, purchase_reserved,
                           choose_2_different, choose_1, return_3))
+        mask = make_mask(mask)
+
         if not np.any(mask):
             raise ValueError("Mask allows for no actions.")
         return mask
