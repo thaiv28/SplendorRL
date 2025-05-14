@@ -9,16 +9,19 @@ def main():
     parser.add_argument('-e', "--environment", default="splendor_v0", 
                         help="Environment to run", type=str)
     parser.add_argument('-a', "--algorithm", default="reinforce", 
-                        help="Algorithm to use: (reinforce)", type=str)
+                        help="Algorithm to use", type=str,
+                        choices=["reinforce"])
     parser.add_argument('-n', "--network", default="mlp", 
-                        help="Policy network to use: (MLP)", type=str)
+                        help="Policy network architecture", type=str,
+                        choices=["mlp"])
     parser.add_argument('-l', "--learning-rate", default=1e-2,
-                        help="Learning rate", type=float)
+                        help="Learning rate for optimizer", type=float)
     parser.add_argument('-p', "--epochs", default=50,
-                        help="Number of epochs", type=int)
+                        help="Number of training epochs", type=int)
     parser.add_argument('-b', "--batch-size", default=5000,
-                        help="Batch size", type=int)
-    parser.add_argument('-r', "--render", action='store_true')
+                        help="Number of timesteps per policy update", type=int)
+    parser.add_argument('-r', "--render", action='store_true',
+                        help="If set, renders the environment during training")
 
     args = parser.parse_args()
 
