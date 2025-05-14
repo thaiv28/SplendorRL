@@ -99,9 +99,10 @@ def train(lr=1e-2, epochs=50, batch_size=5000, hidden_sizes=[32], render=True):
                 batch_acts[agent].append(action)
                 ep_rews[agent].append(rew)
 
-                if rew == -1:
+                if rew < 0:
                     continue
                 else:
+                    env.next_agent()
                     break
 
 
@@ -125,6 +126,7 @@ def train(lr=1e-2, epochs=50, batch_size=5000, hidden_sizes=[32], render=True):
 
         optimizer.zero_grad()
         batch_losses = {}
+        batch_losses_tensor = torch.zeros(len(batch_obs))
         for i, agent in enumerate(batch_obs):
             # efficiency reasons
             np_batch_obs = np.array(batch_obs[agent])
@@ -132,8 +134,10 @@ def train(lr=1e-2, epochs=50, batch_size=5000, hidden_sizes=[32], render=True):
                                   action=torch.as_tensor(batch_acts[agent], dtype=torch.int32),
                                   ret=torch.as_tensor(batch_weights[agent], dtype=torch.float32))
             batch_losses[agent] = batch_loss
-            batch_loss.backward()
+            batch_losses_tensor[i] = batch_loss
 
+        total_loss = torch.sum(batch_losses_tensor)
+        total_loss.backward()
         optimizer.step()
         return batch_losses, batch_rets, batch_lens
     
