@@ -9,10 +9,16 @@ from splendor.policy import MLP
 
 class BatchInfo:
     def __init__(self, batch_obs, batch_masks, batch_actions, batch_weights, info=None):
-        """Convert batch information to numpy array if applicable."""
+        """
+        Convert batch information to numpy array if applicable.
+
+        Return value will be a dictionary of type [agent_name (str), np.ndarray]. If the
+        input is a nested list of ints (as it should be for observations and masks), 
+        the return values will be a 2d numpy array.
+        """
 
         self.obs: dict[str, np.ndarray] = BatchInfo.convert_to_numpy(batch_obs)
-        self.masks: dict[str, np.ndarray] = BatchInfo.convert_to_numpy(batch_masks)
+        self.masks: dict[str, np.ndarray] = BatchInfo.convert_to_numpy(batch_masks, dtype=bool)
         self.actions: dict[str, np.ndarray] = BatchInfo.convert_to_numpy(batch_actions)
         self.weights: dict[str, np.ndarray] = BatchInfo.convert_to_numpy(batch_weights)
         if info is None:
@@ -20,12 +26,30 @@ class BatchInfo:
         else:
             self.info = info
 
+        for agent in self.obs:
+            n = len(self.obs[agent])
+
+            if (len(self.masks[agent]) != n or
+                len(self.actions[agent]) != n or
+                len(self.weights[agent]) != n):
+                raise ValueError("Observations, masks, actions, and weights are differing sizes")
+
+            assert self.obs[agent].ndim == 2
+            assert self.masks[agent].ndim == 2
+            assert self.actions[agent].ndim == 1
+            assert self.weights[agent].ndim == 1
+
+
     @staticmethod
-    def convert_to_numpy(batch_nums):
+    def convert_to_numpy(batch_nums, dtype=None):
         """Convert dictionary of lists to dictionary of np arrays"""
 
         if isinstance(batch_nums, dict):
-            return {k: np.array(v) for k, v in batch_nums.items()}
+            if dtype:
+                return {k: np.array(v, dtype=dtype) for k, v in batch_nums.items()}
+            else:
+                return {k: np.array(v) for k, v in batch_nums.items()}
+
 
         raise ValueError("Type of batch information is unsupported", type(batch_nums))
 

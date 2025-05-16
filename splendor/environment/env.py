@@ -16,6 +16,9 @@ from splendor.environment.game import Splendor
 
 NUM_ITERS = 200
 
+def prewrapped_env():
+    return FlattenObservationWrapper(FlattenActionWrapper(SplendorEnv()))
+
 class SplendorEnv(AECEnv):
    
     metadata = {
