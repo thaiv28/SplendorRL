@@ -1,5 +1,7 @@
 import argparse
 
+import wandb
+
 from splendor.train import train
 from splendor.environment.env import SplendorEnv, FlattenActionWrapper, FlattenObservationWrapper
 
@@ -22,8 +24,17 @@ def main():
                         help="Number of timesteps per policy update", type=int)
     parser.add_argument('-r', "--render", action='store_true',
                         help="If set, renders the environment during training")
+    parser.add_argument('-w', "--wandb", action='store_true',
+                        help="If set, log training using wandb")
 
     args = parser.parse_args()
+
+    if args.wandb:
+        wandb.login()
+        run = wandb.init(
+            project="SplendorRL",
+            config=vars(args)
+        )
 
     #TODO: Add support for config
     
@@ -38,7 +49,7 @@ def main():
         lr=args.learning_rate,
         epochs=args.epochs,
         batch_size=args.batch_size,
-        render=args.render
+        render=args.render,
     )
  
 if __name__=="__main__":

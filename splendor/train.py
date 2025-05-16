@@ -1,6 +1,8 @@
 from pettingzoo import AECEnv
 import numpy as np
 
+import wandb
+
 from splendor.environment.env import (
     SplendorEnv,
     FlattenObservationWrapper,
@@ -20,7 +22,7 @@ def train(
         hidden_sizes: list[int] = [32],
         render: bool = True,
         algo_args: list = [],
-        algo_kwargs: dict = {}
+        algo_kwargs: dict = {},
 ):
     """
     Trains an agent given an environment, algorithm, and policy architecture.
@@ -50,14 +52,21 @@ def train(
     # sample observations given policy 
     for i in range(epochs):
         batch_info = sample_one_epoch(env, policy_network, batch_size, render=render)
-        batch_losses = algorithm.update(batch_info)
+        batch_info.info["losses"] = algorithm.update(batch_info)
+        
 
         print('epoch: %3d: '%i)
-        for agent in batch_losses:
+        for agent in batch_info.info["losses"]:
+            batch_info.info["returns"][agent] = np.mean(batch_info.info["returns"][agent])
+            batch_info.info["lengths"][agent] = np.mean(batch_info.info["lengths"][agent])
+
+
             print('agent %s \t loss: %.3f \t return: %.3f \t ep_len: %.3f'%
-                  (agent, batch_losses[agent], 
-                   np.mean(batch_info.info["returns"][agent]), 
-                   np.mean(batch_info.info["lengths"][agent])))
+                  (agent, batch_info.info["losses"][agent], 
+                   batch_info.info["returns"][agent], 
+                   batch_info.info["lengths"][agent]))
+
+        wandb.log(batch_info.info)
 
 
 

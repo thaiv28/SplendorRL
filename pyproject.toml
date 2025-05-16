@@ -13,6 +13,7 @@ pandas = "^2.2.3"
 torch = "^2.6.0"
 supersuit = "^3.9.3"
 pytest = "^8.3.5"
+wandb = "^0.19.11"
 
 
 [build-system]

@@ -89,6 +89,5 @@ At each timestep, the agent selects one of these sub-actions and then provides a
 
 ## Todo
 - Implement action masking for manually playing.
-- WanDB logging
 - Ability to use config files instead of command line arguments
 
