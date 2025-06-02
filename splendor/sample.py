@@ -1,4 +1,5 @@
 from collections import defaultdict
+from typing import Mapping
 
 import torch
 from pettingzoo import AECEnv
@@ -8,9 +9,27 @@ from splendor.environment import SplendorEnv
 from splendor.policy import MLP
 
 class BatchInfo:
-    def __init__(self, batch_obs, batch_masks, batch_actions, batch_weights, info=None):
+    def __init__(self, batch_obs, batch_masks, batch_actions, batch_rewards, info=None):
         """
         Convert batch information to numpy array if applicable.
+
+        Args:
+        batch_obs - dict[agent, list of 1d arrays of size observation space]
+        batch_masks - dict[agent, list of 1d arrays of size action space]
+        batch_actions - dict[agent, list of scalars representing actions]
+        batch_rewards - dict[agent, list of 1d arrays of size episode_length]
+                Outer list: List of episodes 
+                Inner list: List of scalar rewards for that episode
+
+        Batch_rewards are nested lists because the inner lists represent an episode.
+        We keep it this way so that the algorithm can decide how to calculate returns,
+        and we give it an easy way to determine where episodes start and end.
+
+        Returns:
+        batch_obs - dict[agent, 2d array of shape (num_observations, observation_space)
+        batch_masks - dict[agent, 2d array of shape (num_actions, action_space)
+        batch_actions - dict[agent, 1d array of shape (action_space,)]
+        batch_rewards - dict[agent, list of 1d arrays of size episode length)]
 
         Return value will be a dictionary of type [agent_name (str), np.ndarray]. If the
         input is a nested list of ints (as it should be for observations and masks), 
@@ -20,7 +39,11 @@ class BatchInfo:
         self.obs: dict[str, np.ndarray] = BatchInfo.convert_to_numpy(batch_obs)
         self.masks: dict[str, np.ndarray] = BatchInfo.convert_to_numpy(batch_masks, dtype=bool)
         self.actions: dict[str, np.ndarray] = BatchInfo.convert_to_numpy(batch_actions)
-        self.weights: dict[str, np.ndarray] = BatchInfo.convert_to_numpy(batch_weights)
+        self.rewards: Mapping[str, list[np.ndarray]] = defaultdict(lambda: [])
+        for agent, rewards_list in batch_rewards.items():
+            for ep_rewards in rewards_list:
+                self.rewards[agent].append(np.array(ep_rewards))                                 
+
         if info is None:
             self.info = {}
         else:
@@ -31,13 +54,12 @@ class BatchInfo:
 
             if (len(self.masks[agent]) != n or
                 len(self.actions[agent]) != n or
-                len(self.weights[agent]) != n):
+                sum(len(l) for l in self.rewards[agent]) != n):
                 raise ValueError("Observations, masks, actions, and weights are differing sizes")
 
             assert self.obs[agent].ndim == 2
             assert self.masks[agent].ndim == 2
             assert self.actions[agent].ndim == 1
-            assert self.weights[agent].ndim == 1
 
 
     @staticmethod
@@ -49,7 +71,6 @@ class BatchInfo:
                 return {k: np.array(v, dtype=dtype) for k, v in batch_nums.items()}
             else:
                 return {k: np.array(v) for k, v in batch_nums.items()}
-
 
         raise ValueError("Type of batch information is unsupported", type(batch_nums))
 
@@ -65,7 +86,7 @@ def sample_one_epoch(env: AECEnv, policy: MLP, batch_size: int, render=False) ->
     batch_obs = defaultdict(lambda: [])
     batch_masks = defaultdict(lambda: [])
     batch_actions = defaultdict(lambda: [])
-    batch_weights = defaultdict(lambda: [])
+    batch_rewards = defaultdict(lambda: [])
     batch_returns = defaultdict(lambda: [])
     batch_lens = defaultdict(lambda: [])
 
@@ -115,17 +136,17 @@ def sample_one_epoch(env: AECEnv, policy: MLP, batch_size: int, render=False) ->
             # accounted for here.
             for agent in env.rewards:
                 ep_rewards[agent][-1] += env.rewards[agent]
-      
+   
             ep_returns = {a: sum(rews) for a, rews in ep_rewards.items()}
             ep_lengths = {a: len(rews) for a, rews in ep_rewards.items()}
 
             for agent in agent_list:
                 # Update list of returns and lengths for debugging
+                batch_rewards[agent].append(ep_rewards[agent])
                 batch_returns[agent].append(ep_returns[agent])
                 batch_lens[agent].append(ep_lengths[agent])
 
-                # Update the batch weights that will be used for training
-                batch_weights[agent] += [ep_returns[agent]] * ep_lengths[agent]
+                # Update the batch rewards that will be used for training
 
             env.reset()
             ep_rewards = defaultdict(lambda: [])
@@ -142,7 +163,7 @@ def sample_one_epoch(env: AECEnv, policy: MLP, batch_size: int, render=False) ->
         batch_obs,
         batch_masks,
         batch_actions, 
-        batch_weights,
+        batch_rewards,
         info
     )
 

@@ -66,7 +66,8 @@ def train(
                    batch_info.info["returns"][agent], 
                    batch_info.info["lengths"][agent]))
 
-        wandb.log(batch_info.info)
+        if wandb.run:
+            wandb.log(batch_info.info)
 
 
 
