@@ -13,7 +13,7 @@ Use the command line interface to train a model on the splendor environment.
 python3 splendor/main.py -h
 ```
 
-```bash
+```
 usage: splendor [-h] [-e ENVIRONMENT] [-a {reinforce}] [-n {mlp}] [-l LEARNING_RATE] [-p EPOCHS] [-b BATCH_SIZE] [-r]
 
 options:
@@ -90,4 +90,5 @@ At each timestep, the agent selects one of these sub-actions and then provides a
 ## Todo
 - Implement action masking for manually playing.
 - Ability to use config files instead of command line arguments
+- `Match` data structure that holds match information for debugging
 
