@@ -10,10 +10,11 @@ from splendor.sample import BatchInfo
 from splendor.algos.algorithm import Algorithm
 
 class Reinforce(Algorithm):
-    def __init__(self, policy_network, optimizer: str = "adam", lr: float = 1e-2):
+    def __init__(self, policy_network, optimizer: str = "adam", lr: float = 1e-2,
+                 gamma: float = 0.99):
         """Set policy network and optimizer for algorithm"""
 
-        super().__init__(policy_network, optimizer, lr)
+        super().__init__(policy_network, optimizer, lr, gamma)
 
     def update(self, batch: BatchInfo):
         """Update parameters of network for a sampled batch using set optimizer"""
@@ -21,7 +22,7 @@ class Reinforce(Algorithm):
         self.optimizer.zero_grad()
 
         batch_losses = {}
-        rewards = Reinforce.batchify_rewards(batch.rewards)
+        rewards = Reinforce.batchify_rewards(batch.rewards, self.gamma)
 
         for agent in batch.obs:
             batch_loss = self.compute_loss(
@@ -45,19 +46,20 @@ class Reinforce(Algorithm):
         logprobs = self.policy_network._get_distribution(observations, masks).log_prob(actions)
         return -(logprobs * rets).mean()
 
-    @staticmethod 
-    def batchify_rewards(rewards: Mapping[str, list[np.ndarray]]) -> dict[str, np.ndarray]:
+    @staticmethod
+    def batchify_rewards(rewards: Mapping[str, list[np.ndarray]], gamma) \
+        -> dict[str, np.ndarray]:
         """
-        Applies RTG and subtracts baseline from lists of rewards,
-        then returns as one array of concatenated lists.
+        Applies RTG and transforms rewards into advantages from lists of rewards,
+        then returns as one array per player.
 
         Returns:
             dict[str, np.ndarray of shape (number rewards,)]
         """
 
-        rtgs = Reinforce._compute_rewards_to_go(rewards)
+        rtgs = Reinforce._compute_rewards_to_go(rewards, gamma)
         adv_rewards = Reinforce._compute_mean_baseline(rtgs)
-
+        
         ret = {}
         for agent, traj_list in adv_rewards.items():
             ret[agent] = np.concatenate(traj_list)
@@ -90,9 +92,8 @@ class Reinforce(Algorithm):
 
         return updated_rewards
 
-
     @staticmethod
-    def _compute_rewards_to_go(rewards: Mapping[str, list[np.ndarray]]) \
+    def _compute_rewards_to_go(rewards: Mapping[str, list[np.ndarray]], gamma) \
         -> dict[str, list[np.ndarray]]:
         """
         Compute "rewards to-go" for all agents.
@@ -105,17 +106,18 @@ class Reinforce(Algorithm):
         """
 
         ret = {}
-        for agent, rewards_lists in rewards.items():
+        for agent, traj_list in rewards.items():
             rtgs_list = []
-            for reward_arr in rewards_lists:
+            for reward_arr in traj_list:
                 assert reward_arr.ndim == 1
 
                 n = len(reward_arr)
-                rtgs = np.zeros_like(reward_arr)
+                rtgs = np.zeros(n)
                 for i in reversed(range(n)):
-                    rtgs[i] = reward_arr[i] + (rtgs[i+1] if i+1 < n else 0)
+                    rtgs[i] = reward_arr[i] + (gamma * rtgs[i+1] if i+1 < n else 0)
                
                 rtgs_list.append(rtgs)
+
 
             ret[agent] = rtgs_list
 
